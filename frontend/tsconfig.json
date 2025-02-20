@@ -1,0 +1,50 @@
+{
+  "compilerOptions": {
+    /* Language and Environment */
+    "target": "ES6", /* Set the JavaScript language version */
+    "module": "ESNext", /* Use modern module system */
+    "jsx": "preserve", /* Enable JSX for React */
+    "strict": true, /* Enable all strict type-checking options *//* Modules */
+    "moduleResolution": "node", /* Resolve modules like Node.js */
+    "esModuleInterop": true, /* Enable better CommonJS module compatibility */
+    "allowSyntheticDefaultImports": true, /* Allow default imports even when modules lack them */
+    "resolveJsonModule": true, /* Allow importing JSON files *//* File Structure */
+    "rootDir": ".", /* Set root directory for source files */
+    "outDir": "./dist", /* Set output directory for compiled files */
+    "baseUrl": ".", /* Base directory for module resolution */
+    "skipLibCheck": true, /* Skip type checking for .d.ts files */
+    "forceConsistentCasingInFileNames": true, /* Enforce consistent import casing *//* Additional Options */
+    "strictNullChecks": true, /* Ensure null and undefined are handled properly */
+    "noImplicitAny": true, /* Prevent implicit 'any' types */
+    "noUnusedLocals": true, /* Report unused local variables */
+    "noUnusedParameters": true, /* Report unused function parameters */
+    "noImplicitReturns": true, /* Ensure all functions return a value */
+    "noFallthroughCasesInSwitch": true /* Prevent unintended fallthrough in switch statements */,
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": true,
+    "noEmit": true,
+    "incremental": true,
+    "isolatedModules": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": [
+    "app/**/*",
+    "src/**/*",
+    ".next/types/**/*.ts"
+  ], /* Include all TypeScript files in 'src' directory */
+  "exclude": [
+    "node_modules",
+    "dist"
+  ] /* Exclude unnecessary folders */
+}
