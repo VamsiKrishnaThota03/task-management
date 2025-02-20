@@ -1,5 +1,5 @@
-# Use specific Alpine-based Go image
-FROM golang:1.22.0-alpine3.19
+# Use latest Go 1.22.x version
+FROM golang:1.22.1-alpine3.19
 
 # Set working directory
 WORKDIR /app
@@ -9,6 +9,9 @@ RUN apk add --no-cache git gcc musl-dev
 
 # Copy go.mod and go.sum files first
 COPY go.mod go.sum ./
+
+# Force Go version in container
+RUN go mod edit -go=1.22.0
 
 # Download dependencies
 RUN go mod download
