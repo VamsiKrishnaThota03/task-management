@@ -4,11 +4,14 @@ FROM golang:1.22.0-alpine3.19
 # Set working directory
 WORKDIR /app
 
+# Install git and build dependencies
+RUN apk add --no-cache git gcc musl-dev
+
 # Copy go.mod and go.sum files
 COPY go.mod go.sum ./
 
-# Install build dependencies
-RUN apk add --no-cache git
+# Force Go 1.22 module version
+RUN go mod edit -go=1.22
 
 # Download dependencies
 RUN go mod download
