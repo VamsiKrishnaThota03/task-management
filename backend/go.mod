@@ -1,18 +1,20 @@
 module task-management-system
 
-go 1.24.0
+go 1.22.7
+
+toolchain go1.24.0
 
 require (
-	github.com/gin-contrib/cors v1.7.3
-	github.com/gin-gonic/gin v1.10.0
-	github.com/golang-jwt/jwt/v5 v5.2.1
+	github.com/gin-contrib/cors v1.5.0
+	github.com/gin-gonic/gin v1.9.1
+	github.com/golang-jwt/jwt/v5 v5.2.0
 	github.com/google/generative-ai-go v0.19.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/joho/godotenv v1.5.1
 	golang.org/x/crypto v0.33.0
-	google.golang.org/api v0.222.0
-	gorm.io/driver/postgres v1.5.11
-	gorm.io/gorm v1.25.12
+	google.golang.org/api v0.211.0
+	gorm.io/driver/postgres v1.5.6
+	gorm.io/gorm v1.25.7
 )
 
 require (

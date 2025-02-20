@@ -8,19 +8,17 @@ WORKDIR /app
 RUN apk add --no-cache git gcc musl-dev
 
 # Copy go.mod and go.sum files
-COPY go.mod go.sum ./
+COPY go.mod ./
 
-# Force Go 1.22 module version
-RUN go mod edit -go=1.22
-
-# Download dependencies
-RUN go mod download
+# Initialize go.mod
+RUN go mod init task-management-system
 
 # Copy the source code
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o main .
+# Download dependencies and build
+RUN go mod tidy && \
+    CGO_ENABLED=0 GOOS=linux go build -o main .
 
 # Expose port 8080
 EXPOSE 8080
