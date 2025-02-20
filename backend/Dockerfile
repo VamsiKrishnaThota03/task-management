@@ -1,5 +1,5 @@
-# Use a specific Go version that's compatible with your dependencies
-FROM golang:1.22
+# Use specific Alpine-based Go image
+FROM golang:1.22.0-alpine3.19
 
 # Set working directory
 WORKDIR /app
@@ -7,8 +7,11 @@ WORKDIR /app
 # Copy go.mod and go.sum files
 COPY go.mod go.sum ./
 
-# Update go.mod to use compatible versions
-RUN go mod tidy
+# Install build dependencies
+RUN apk add --no-cache git
+
+# Download dependencies
+RUN go mod download
 
 # Copy the source code
 COPY . .
