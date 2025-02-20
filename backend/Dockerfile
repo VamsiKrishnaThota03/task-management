@@ -1,5 +1,5 @@
-# Start from the official Go image
-FROM golang:1.21
+# Use a specific Go version that's compatible with your dependencies
+FROM golang:1.22
 
 # Set working directory
 WORKDIR /app
@@ -7,14 +7,14 @@ WORKDIR /app
 # Copy go.mod and go.sum files
 COPY go.mod go.sum ./
 
-# Download dependencies
-RUN go mod download
+# Update go.mod to use compatible versions
+RUN go mod tidy
 
 # Copy the source code
 COPY . .
 
 # Build the application
-RUN go build -o main .
+RUN CGO_ENABLED=0 GOOS=linux go build -o main .
 
 # Expose port 8080
 EXPOSE 8080
