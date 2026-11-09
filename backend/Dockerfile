@@ -1,26 +1,21 @@
-# Use specific Alpine-based Go image
-FROM golang:1.22.1-alpine3.19
+# ---- build ----
+FROM golang:1.26-alpine AS build
+WORKDIR /src
 
-# Set working directory
-WORKDIR /app
-
-# Install git and build dependencies
-RUN apk add --no-cache git gcc musl-dev
-
-# Copy only go.mod first
-COPY go.mod ./
-
-# Clean and verify modules
+COPY go.mod go.sum ./
 RUN go mod download && go mod verify
 
-# Copy the rest of the code
 COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o main .
+# ---- run ----
+FROM alpine:3.22
+RUN apk add --no-cache ca-certificates && adduser -D -H app
+USER app
+COPY --from=build /out/server /server
 
-# Expose port 8080
+# Inside the container the server must listen on all interfaces; publish the
+# port to 127.0.0.1 locally (docker run -p 127.0.0.1:8080:8080 ...).
+ENV HOST=0.0.0.0 PORT=8080 GIN_MODE=release
 EXPOSE 8080
-
-# Command to run the application
-CMD ["./main"] 
+CMD ["/server"]
