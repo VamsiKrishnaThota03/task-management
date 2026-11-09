@@ -1,46 +1,55 @@
 package models
 
 import (
-    "golang.org/x/crypto/bcrypt"
-    "gorm.io/gorm"
-    "github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
-// Define user roles
+// User roles
 const (
-    RoleUser  = "user"
-    RoleAdmin = "admin"
+	RoleUser  = "user"
+	RoleAdmin = "admin"
 )
 
 type User struct {
-    gorm.Model
-    Username string `gorm:"unique" json:"username"`
-    Password string `json:"-"` // "-" means this field won't be included in JSON
-    Role     string `gorm:"default:user" json:"role"`
+	gorm.Model
+	Username string `gorm:"unique" json:"username"`
+	Password string `json:"-"` // bcrypt hash, never serialised
+	Role     string `gorm:"default:user" json:"role"`
 }
 
-// Hash user password before saving
-func (u *User) HashPassword() error {
-    hashedPassword, err := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
-    if err != nil {
-        return err
-    }
-    u.Password = string(hashedPassword)
-    return nil
+// SetPassword stores the bcrypt hash of the given plaintext password.
+func (u *User) SetPassword(plain string) error {
+	hashed, err := bcrypt.GenerateFromPassword([]byte(plain), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	u.Password = string(hashed)
+	return nil
 }
 
-// Check if entered password matches stored hash
+// CheckPassword reports whether the plaintext password matches the stored hash.
 func (u *User) CheckPassword(password string) bool {
-    err := bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password))
-    return err == nil
+	if u.Password == "" {
+		return false
+	}
+	return bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password)) == nil
 }
 
-// Add a method to convert to profile response
-func (u *User) ToProfileResponse() gin.H {
-    return gin.H{
-        "id":        u.ID,
-        "username":  u.Username,
-        "role":     u.Role,
-        "createdAt": u.CreatedAt,
-    }
+// UserResponse is the public representation of a user.
+type UserResponse struct {
+	ID        uint   `json:"id"`
+	Username  string `json:"username"`
+	Role      string `json:"role"`
+	CreatedAt string `json:"createdAt"`
+}
+
+// ToResponse converts the user to its public representation.
+func (u *User) ToResponse() UserResponse {
+	return UserResponse{
+		ID:        u.ID,
+		Username:  u.Username,
+		Role:      u.Role,
+		CreatedAt: u.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
+	}
 }

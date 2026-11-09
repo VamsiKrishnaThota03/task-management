@@ -1,28 +1,21 @@
 package middleware
 
 import (
-    "net/http"
-    "task-management-system/internal/auth"
-    "github.com/gin-gonic/gin"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+
+	"task-management-system/internal/models"
 )
 
-// Middleware to allow only admin users
+// AdminMiddleware allows only admins. It must run after JWTAuthMiddleware,
+// which puts the user's current role in the context.
 func AdminMiddleware() gin.HandlerFunc {
-    return func(c *gin.Context) {
-        tokenString := c.GetHeader("Authorization")
-        if tokenString == "" {
-            c.JSON(http.StatusUnauthorized, gin.H{"error": "No token provided"})
-            c.Abort()
-            return
-        }
-
-        _, role, err := auth.VerifyToken(tokenString)
-        if err != nil || role != "admin" {
-            c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
-            c.Abort()
-            return
-        }
-
-        c.Next()
-    }
+	return func(c *gin.Context) {
+		if c.GetString("role") != models.RoleAdmin {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
+			return
+		}
+		c.Next()
+	}
 }
