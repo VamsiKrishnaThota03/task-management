@@ -1,66 +1,143 @@
+// Package websocket keeps a set of authenticated clients and broadcasts
+// small task-change events to them so task lists can refresh.
 package websocket
 
 import (
-    "github.com/gorilla/websocket"
-    "net/http"
-    "sync"
-    "log"
+	"encoding/json"
+	"log"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/gorilla/websocket"
+
+	"task-management-system/internal/auth"
 )
 
-var upgrader = websocket.Upgrader{
-    CheckOrigin: func(r *http.Request) bool {
-        return true
-    },
+const (
+	writeWait  = 10 * time.Second
+	pongWait   = 60 * time.Second
+	pingPeriod = 50 * time.Second
+)
+
+type client struct {
+	conn *websocket.Conn
+	mu   sync.Mutex // gorilla connections allow one concurrent writer
 }
 
-var clients = make(map[*websocket.Conn]bool)
-var mutex = sync.Mutex{}
-
-// ✅ WebSocket Handler
-func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
-    conn, err := upgrader.Upgrade(w, r, nil)
-    if err != nil {
-        log.Println("WebSocket upgrade failed:", err)
-        return
-    }
-    defer conn.Close()
-
-    log.Println("WebSocket connected:", conn.RemoteAddr())
-
-    mutex.Lock()
-    clients[conn] = true
-    mutex.Unlock()
-
-    for {
-        messageType, p, err := conn.ReadMessage()
-        if err != nil {
-            log.Println("WebSocket read error:", err)
-            mutex.Lock()
-            delete(clients, conn)
-            mutex.Unlock()
-            return
-        }
-
-        log.Println("WebSocket received:", string(p))
-        BroadcastMessage(string(p)) // ✅ Broadcast to all clients
-
-        if err := conn.WriteMessage(messageType, p); err != nil {
-            log.Println("WebSocket write error:", err)
-            return
-        }
-    }
+func (c *client) write(messageType int, data []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+	return c.conn.WriteMessage(messageType, data)
 }
 
-// ✅ Function to broadcast messages to all clients
-func BroadcastMessage(message string) {
-    mutex.Lock()
-    defer mutex.Unlock()
+var (
+	clientsMu sync.Mutex
+	clients   = map[*client]struct{}{}
+)
 
-    for client := range clients {
-        err := client.WriteMessage(websocket.TextMessage, []byte(message))
-        if err != nil {
-            client.Close()
-            delete(clients, client)
-        }
-    }
+// Event is the JSON message sent to clients.
+type Event struct {
+	Type   string `json:"type"`
+	TaskID uint   `json:"taskId"`
+}
+
+// Handler returns the /ws handler. Browsers must connect from one of the
+// allowed origins and pass a valid JWT as ?token=... (browsers cannot set an
+// Authorization header on WebSocket requests).
+func Handler(allowedOrigins []string) http.HandlerFunc {
+	upgrader := websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			origin := strings.TrimRight(r.Header.Get("Origin"), "/")
+			if origin == "" {
+				return true // non-browser client; still needs a valid token
+			}
+			for _, allowed := range allowedOrigins {
+				if allowed == "*" || strings.EqualFold(origin, allowed) {
+					return true
+				}
+			}
+			return false
+		},
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		if _, _, err := auth.VerifyToken(r.URL.Query().Get("token")); err != nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			log.Println("WebSocket upgrade failed:", err)
+			return
+		}
+		c := &client{conn: conn}
+
+		clientsMu.Lock()
+		clients[c] = struct{}{}
+		clientsMu.Unlock()
+
+		defer func() {
+			clientsMu.Lock()
+			delete(clients, c)
+			clientsMu.Unlock()
+			conn.Close()
+		}()
+
+		conn.SetReadLimit(1024)
+		_ = conn.SetReadDeadline(time.Now().Add(pongWait))
+		conn.SetPongHandler(func(string) error {
+			return conn.SetReadDeadline(time.Now().Add(pongWait))
+		})
+
+		done := make(chan struct{})
+		defer close(done)
+		go func() {
+			ticker := time.NewTicker(pingPeriod)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					if err := c.write(websocket.PingMessage, nil); err != nil {
+						return
+					}
+				case <-done:
+					return
+				}
+			}
+		}()
+
+		// Clients only listen; incoming messages are read and discarded so
+		// that control frames (pong/close) are processed.
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}
+}
+
+// BroadcastTaskEvent notifies every connected client that a task changed.
+// Only the task ID is sent; clients refetch through the authorised API.
+func BroadcastTaskEvent(eventType string, taskID uint) {
+	data, err := json.Marshal(Event{Type: eventType, TaskID: taskID})
+	if err != nil {
+		return
+	}
+
+	clientsMu.Lock()
+	targets := make([]*client, 0, len(clients))
+	for c := range clients {
+		targets = append(targets, c)
+	}
+	clientsMu.Unlock()
+
+	for _, c := range targets {
+		if err := c.write(websocket.TextMessage, data); err != nil {
+			c.conn.Close()
+		}
+	}
 }
