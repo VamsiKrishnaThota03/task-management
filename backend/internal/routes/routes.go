@@ -1,57 +1,63 @@
 package routes
 
 import (
-    "github.com/gin-gonic/gin"
-    "github.com/gin-contrib/cors" // ✅ Import CORS middleware
-    "task-management-system/internal/handlers"
-    "task-management-system/internal/websocket"
-    "task-management-system/internal/middleware"
-    "gorm.io/gorm"
-    "time"
-    "task-management-system/internal/config"
+	"net/http"
+	"time"
+
+	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+
+	"task-management-system/internal/config"
+	"task-management-system/internal/handlers"
+	"task-management-system/internal/middleware"
+	"task-management-system/internal/websocket"
+	"task-management-system/pkg/ai"
 )
 
+// SetupRouter wires all routes.
 func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
-    router := gin.Default()
+	router := gin.New()
+	// /ws carries the JWT in its query string, so keep it out of access logs.
+	router.Use(gin.LoggerWithConfig(gin.LoggerConfig{SkipPaths: []string{"/ws"}}), gin.Recovery())
+	_ = router.SetTrustedProxies(nil)
 
-    // ✅ Allow frontend (http://localhost:3000) to call APIs
-    router.Use(cors.New(cors.Config{
-        AllowOrigins:     []string{"https://your-frontend-url.vercel.app"},
-        AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-        AllowHeaders:     []string{"Content-Type", "Authorization"},
-        AllowCredentials: true,
-        MaxAge:           12 * time.Hour,
-    }))
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     cfg.AllowedOrigins,
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Content-Type", "Authorization"},
+		AllowCredentials: false, // bearer tokens, no cookies
+		MaxAge:           12 * time.Hour,
+	}))
 
-    // ✅ WebSocket Route (Make sure WebSocket is properly set)
-    router.GET("/ws", func(c *gin.Context) {
-        websocket.HandleWebSocket(c.Writer, c.Request)
-    })
+	router.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })
+	router.GET("/ws", gin.WrapF(websocket.Handler(cfg.AllowedOrigins)))
 
-    router.POST("/register", handlers.RegisterUser(db))
-    router.POST("/login", handlers.LoginUser(db)) // ✅ Fixed reference
+	router.POST("/register", handlers.RegisterUser(db))
+	router.POST("/login", handlers.LoginUser(db))
 
-    // Protected routes group
-    protected := router.Group("/api")
-    protected.Use(middleware.JWTAuthMiddleware())
-    {
-        // User routes
-        protected.GET("/profile", handlers.GetProfile(db))
-        
-        // Task routes
-        protected.GET("/tasks", handlers.GetTasks(db))
-        protected.POST("/tasks", handlers.CreateTask(db))
-        protected.PUT("/tasks/:id/status", handlers.UpdateTaskStatus(db))
-        protected.POST("/tasks/suggestions", handlers.GetTaskSuggestions(db, cfg))
-        
-        // Admin routes
-        admin := protected.Group("")
-        admin.Use(middleware.AdminMiddleware())
-        {
-            admin.DELETE("/tasks/:id", handlers.DeleteTask(db))
-            admin.GET("/users", handlers.GetUsers(db))
-        }
-    }
+	aiClient := ai.NewClient(cfg.GeminiKey, cfg.GeminiModel)
 
-    return router
+	protected := router.Group("/api")
+	protected.Use(middleware.JWTAuthMiddleware(db))
+	{
+		protected.GET("/profile", handlers.GetProfile(db))
+		protected.GET("/users/assignable", handlers.GetAssignees(db))
+
+		protected.GET("/tasks", handlers.GetTasks(db))
+		protected.POST("/tasks", handlers.CreateTask(db))
+		protected.POST("/tasks/suggestions", handlers.GetTaskSuggestions(aiClient))
+		protected.GET("/tasks/:id", handlers.GetTask(db))
+		protected.PUT("/tasks/:id", handlers.UpdateTask(db))
+		protected.PUT("/tasks/:id/status", handlers.UpdateTaskStatus(db))
+
+		admin := protected.Group("")
+		admin.Use(middleware.AdminMiddleware())
+		{
+			admin.DELETE("/tasks/:id", handlers.DeleteTask(db))
+			admin.GET("/users", handlers.GetUsers(db))
+		}
+	}
+
+	return router
 }
