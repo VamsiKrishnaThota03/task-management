@@ -1,5 +1,10 @@
-import EditTaskForm from './EditTaskForm';
+"use client";
 
-export default function EditTaskPage({ params }: { params: { id: string } }) {
-    return <EditTaskForm taskId={params.id} />;
-} 
+import { useParams } from "next/navigation";
+import RequireAuth from "../../../components/RequireAuth";
+import EditTaskForm from "./EditTaskForm";
+
+export default function EditTaskPage() {
+    const params = useParams<{ id: string }>();
+    return <RequireAuth>{() => <EditTaskForm taskId={params.id} />}</RequireAuth>;
+}

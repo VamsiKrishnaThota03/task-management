@@ -1,24 +1,28 @@
 "use client";
 
-import React from 'react';
-import { useRouter } from 'next/navigation';
-import { TaskList } from '../components/TaskList';
+import Link from "next/link";
+import RequireAuth from "../components/RequireAuth";
+import { TaskList } from "../components/TaskList";
 
 export default function TasksPage() {
-    const router = useRouter();
-
     return (
-        <div className="container">
-            <div className="d-flex justify-content-between align-items-center mb-4">
-                <h1>Tasks</h1>
-                <button 
-                    className="btn btn-primary"
-                    onClick={() => router.push('/tasks/new')}
-                >
-                    Create New Task
-                </button>
-            </div>
-            <TaskList />
-        </div>
+        <RequireAuth>
+            {(session) => (
+                <>
+                    <div className="tm-page-header d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+                        <div>
+                            <h1>Tasks</h1>
+                            <p className="text-muted-2 mb-0">
+                                {session.role === "admin" ? "All tasks in the workspace." : "Tasks assigned to you or created by you."}
+                            </p>
+                        </div>
+                        <Link href="/tasks/new" className="btn btn-primary">
+                            + New task
+                        </Link>
+                    </div>
+                    <TaskList session={session} />
+                </>
+            )}
+        </RequireAuth>
     );
 }

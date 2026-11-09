@@ -1,13 +1,20 @@
 "use client";
 
-import React from 'react';
-import { TaskForm } from '../../components/TaskForm';
+import RequireAuth from "../../components/RequireAuth";
+import { TaskForm } from "../../components/TaskForm";
 
 export default function NewTaskPage() {
     return (
-        <div className="container">
-            <h1 className="mb-4">Create New Task</h1>
-            <TaskForm />
-        </div>
+        <RequireAuth>
+            {() => (
+                <div className="mx-auto" style={{ maxWidth: 760 }}>
+                    <div className="tm-page-header mb-4">
+                        <h1>New task</h1>
+                        <p className="text-muted-2 mb-0">Describe the work, pick an assignee and set a due date.</p>
+                    </div>
+                    <TaskForm />
+                </div>
+            )}
+        </RequireAuth>
     );
-} 
+}

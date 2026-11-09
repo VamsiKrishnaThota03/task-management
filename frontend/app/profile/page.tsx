@@ -1,5 +1,8 @@
-import UserProfile from '../components/UserProfile';
+"use client";
+
+import RequireAuth from "../components/RequireAuth";
+import UserProfile from "../components/UserProfile";
 
 export default function ProfilePage() {
-    return <UserProfile />;
-} 
+    return <RequireAuth>{() => <UserProfile />}</RequireAuth>;
+}

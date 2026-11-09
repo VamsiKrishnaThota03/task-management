@@ -1,80 +1,55 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import axios from 'axios';
-
-interface UserProfile {
-    id: number;
-    username: string;
-    role: string;
-    createdAt: string;
-}
+import { useEffect, useState } from "react";
+import { api, errorMessage } from "../lib/api";
+import { UserProfile as Profile } from "../lib/types";
 
 export default function UserProfile() {
-    const router = useRouter();
-    const [profile, setProfile] = useState<UserProfile | null>(null);
+    const [profile, setProfile] = useState<Profile | null>(null);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
+    const [error, setError] = useState("");
 
     useEffect(() => {
-        const fetchProfile = async () => {
-            try {
-                const token = localStorage.getItem('token');
-                if (!token) {
-                    router.push('/login');
-                    return;
-                }
+        api.get<Profile>("/api/profile")
+            .then((res) => setProfile(res.data))
+            .catch((err) => setError(errorMessage(err, "Failed to load profile")))
+            .finally(() => setLoading(false));
+    }, []);
 
-                const response = await axios.get('http://localhost:8080/api/profile', {
-                    headers: { 
-                        Authorization: `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-
-                setProfile(response.data);
-            } catch (err: any) {
-                setError(err.response?.data?.error || 'Failed to fetch profile');
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchProfile();
-    }, [router]);
-
-    if (loading) return <div className="text-center p-4">Loading...</div>;
-    if (error) return <div className="alert alert-danger m-4">{error}</div>;
+    if (loading) {
+        return (
+            <div className="d-flex justify-content-center py-5" role="status">
+                <div className="spinner-border text-primary" aria-hidden="true" />
+                <span className="visually-hidden">Loading…</span>
+            </div>
+        );
+    }
+    if (error) return <div className="alert alert-danger">{error}</div>;
     if (!profile) return null;
 
+    const initials = profile.username.slice(0, 2).toUpperCase();
+
     return (
-        <div className="container mt-4">
-            <div className="row justify-content-center">
-                <div className="col-md-8">
-                    <div className="card">
-                        <div className="card-header">
-                            <h3 className="mb-0">User Profile</h3>
-                        </div>
-                        <div className="card-body">
-                            <div className="mb-3">
-                                <label className="form-label">Username</label>
-                                <p className="form-control">{profile.username}</p>
-                            </div>
-                            <div className="mb-3">
-                                <label className="form-label">Role</label>
-                                <p className="form-control">{profile.role}</p>
-                            </div>
-                            <div className="mb-3">
-                                <label className="form-label">Member Since</label>
-                                <p className="form-control">
-                                    {new Date(profile.createdAt).toLocaleDateString()}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
+        <div className="tm-card p-4 p-md-5 mx-auto" style={{ maxWidth: 560 }}>
+            <div className="d-flex align-items-center gap-3 mb-4">
+                <div className="tm-empty-icon m-0 fw-bold" style={{ fontSize: "1.1rem" }} aria-hidden="true">
+                    {initials}
+                </div>
+                <div>
+                    <h1 className="h4 fw-bold mb-0">{profile.username}</h1>
+                    <span className={`badge ${profile.role === "admin" ? "text-bg-warning" : "text-bg-secondary"}`}>
+                        {profile.role}
+                    </span>
                 </div>
             </div>
+            <dl className="row mb-0">
+                <dt className="col-sm-4 text-muted-2 fw-normal">User ID</dt>
+                <dd className="col-sm-8">{profile.id}</dd>
+                <dt className="col-sm-4 text-muted-2 fw-normal">Member since</dt>
+                <dd className="col-sm-8 mb-0">
+                    {new Date(profile.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}
+                </dd>
+            </dl>
         </div>
     );
-} 
+}

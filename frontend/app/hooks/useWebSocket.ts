@@ -1,66 +1,62 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { WS_URL } from "../lib/api";
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8080/ws";
+export interface TaskEvent {
+    type: string;
+    taskId: number;
+    receivedAt: number;
+}
 
-export const useWebSocket = (url: string) => {
-    const [message, setMessage] = useState("");
-    const [wsError, setWsError] = useState<string | null>(null);
+/**
+ * Subscribes to task change events. Reconnects with exponential backoff.
+ * The JWT is passed as a query parameter because browsers cannot set headers
+ * on WebSocket requests.
+ */
+export const useWebSocket = (token: string | null | undefined) => {
+    const [event, setEvent] = useState<TaskEvent | null>(null);
+    const [connected, setConnected] = useState(false);
 
     useEffect(() => {
-        if (typeof window === "undefined") {
-            return;
-        }
+        if (!token || typeof window === "undefined") return;
 
-        let ws: WebSocket;
-        let reconnectInterval: NodeJS.Timeout;
+        let ws: WebSocket | null = null;
+        let retry: ReturnType<typeof setTimeout> | undefined;
+        let attempts = 0;
+        let closedByUs = false;
 
         const connect = () => {
-            try {
-                ws = new WebSocket(url);
-
-                ws.onopen = () => {
-                    console.log("WebSocket connected");
-                    setWsError(null);
-                    if (reconnectInterval) clearTimeout(reconnectInterval);
-                };
-
-                ws.onmessage = (event) => {
-                    setMessage(event.data);
-                };
-
-                ws.onerror = (event: Event) => {
-                    const error = event as ErrorEvent;
-                    const errorMessage = error.message || 'Unknown WebSocket error';
-                    setWsError(errorMessage);
-                    // console.error("WebSocket error:", errorMessage);
-                };
-
-                ws.onclose = (event: CloseEvent) => {
-                    const reason = event.reason || 'Connection closed';
-                    console.log(`WebSocket disconnected: ${event.code} - ${reason}`);
-                    reconnectInterval = setTimeout(connect, 3000);
-                };
-            } catch (error) {
-                const errorMessage = error instanceof Error ? error.message : 'Failed to connect';
-                setWsError(errorMessage);
-                console.error("WebSocket connection failed:", errorMessage);
-                reconnectInterval = setTimeout(connect, 3000);
-            }
+            ws = new WebSocket(`${WS_URL}?token=${encodeURIComponent(token)}`);
+            ws.onopen = () => {
+                attempts = 0;
+                setConnected(true);
+            };
+            ws.onmessage = (msg) => {
+                try {
+                    const data = JSON.parse(msg.data);
+                    setEvent({ type: data.type, taskId: data.taskId, receivedAt: Date.now() });
+                } catch {
+                    /* ignore non-JSON messages */
+                }
+            };
+            ws.onclose = () => {
+                setConnected(false);
+                if (closedByUs) return;
+                const delay = Math.min(30000, 1000 * 2 ** attempts);
+                attempts += 1;
+                retry = setTimeout(connect, delay);
+            };
         };
 
         connect();
 
         return () => {
-            if (ws) {
-                ws.close();
-            }
-            if (reconnectInterval) {
-                clearTimeout(reconnectInterval);
-            }
+            closedByUs = true;
+            if (retry) clearTimeout(retry);
+            ws?.close();
         };
-    }, [url]);
+    }, [token]);
 
-    return { message, error: wsError };
+    return { event, connected };
 };

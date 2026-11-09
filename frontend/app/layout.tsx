@@ -1,35 +1,41 @@
-"use client";
-
-import React, { useEffect } from 'react';
+import type { Metadata, Viewport } from "next";
+import "bootstrap/dist/css/bootstrap.min.css";
+import "./styles/globals.css";
 import Navbar from "./components/Navbar";
-import Script from 'next/script';
 
-export default function Layout({ children }: { children: React.ReactNode }) {
-    useEffect(() => {
-        // Check saved theme preference
-        const savedTheme = localStorage.getItem('theme');
-        if (savedTheme) {
-            document.documentElement.setAttribute('data-bs-theme', savedTheme);
-        }
-    }, []);
+export const metadata: Metadata = {
+    title: {
+        default: "Task Manager",
+        template: "%s · Task Manager",
+    },
+    description: "Assign, track and complete tasks with real-time updates and AI-assisted task descriptions.",
+};
 
+export const viewport: Viewport = {
+    width: "device-width",
+    initialScale: 1,
+};
+
+// Applies the saved theme before first paint to avoid a light/dark flash.
+const themeScript = `try{var t=localStorage.getItem('theme');if(!t){t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}document.documentElement.setAttribute('data-bs-theme',t)}catch(e){}`;
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
-        <html lang="en">
+        <html lang="en" data-bs-theme="light" suppressHydrationWarning>
             <head>
-                <link 
-                    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" 
-                    rel="stylesheet"
-                />
+                <script dangerouslySetInnerHTML={{ __html: themeScript }} />
             </head>
             <body>
                 <Navbar />
-                <main className="container py-4">
-                    {children}
-                </main>
-                <Script 
-                    src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"
-                    strategy="afterInteractive"
-                />
+                <main className="container py-4 py-md-5">{children}</main>
+                <footer className="tm-footer py-3">
+                    <div className="container d-flex flex-wrap justify-content-between gap-2">
+                        <span>Task Manager · Go + Next.js</span>
+                        <a href="https://github.com/VamsiKrishnaThota03/task-management" target="_blank" rel="noreferrer">
+                            Source on GitHub
+                        </a>
+                    </div>
+                </footer>
             </body>
         </html>
     );
