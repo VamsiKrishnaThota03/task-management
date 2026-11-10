@@ -10,8 +10,8 @@ A full-stack task manager with a Go (Gin) API, a Next.js frontend, JWT authentic
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
 ![Gemini](https://img.shields.io/badge/Google-Gemini-8E75B2?logo=googlegemini&logoColor=white)
 
-[![CI](https://github.com/VamsiKrishnaThota03/task-management/actions/workflows/ci.yml/badge.svg)](https://github.com/VamsiKrishnaThota03/task-management/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/VamsiKrishnaThota03/task-management/actions/workflows/codeql.yml/badge.svg)](https://github.com/VamsiKrishnaThota03/task-management/actions/workflows/codeql.yml)
+[![CI](https://github.com/VamsiKrishnaThota03/taskflow/actions/workflows/ci.yml/badge.svg)](https://github.com/VamsiKrishnaThota03/taskflow/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/VamsiKrishnaThota03/taskflow/actions/workflows/codeql.yml/badge.svg)](https://github.com/VamsiKrishnaThota03/taskflow/actions/workflows/codeql.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ![Task list](docs/screenshots/tasks.png)
@@ -87,7 +87,7 @@ task-management/
 ### Backend
 
 ```bash
-git clone https://github.com/VamsiKrishnaThota03/task-management.git
+git clone https://github.com/VamsiKrishnaThota03/taskflow.git
 cd task-management/backend
 cp .env.example .env      # then fill in the values
 go run ./cmd/server       # http://localhost:8080

@@ -31,7 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <footer className="tm-footer py-3">
                     <div className="container d-flex flex-wrap justify-content-between gap-2">
                         <span>Task Manager · Go + Next.js</span>
-                        <a href="https://github.com/VamsiKrishnaThota03/task-management" target="_blank" rel="noreferrer">
+                        <a href="https://github.com/VamsiKrishnaThota03/taskflow" target="_blank" rel="noreferrer">
                             Source on GitHub
                         </a>
                     </div>
