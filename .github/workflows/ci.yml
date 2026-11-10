@@ -162,11 +162,22 @@ jobs:
             exit 1
           fi
 
-          # An anonymous task list must be refused.
-          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/tasks)
-          test "$code" = "401" || { echo "::error::anonymous /tasks returned $code"; exit 1; }
+          # The protected group is mounted at /api, so that is the path to probe;
+          # an anonymous call must be 401, not 404.
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/tasks)
+          test "$code" = "401" || { echo "::error::anonymous /api/tasks returned $code, expected 401"; exit 1; }
 
-          curl -fsS http://127.0.0.1:8080/tasks -H "Authorization: Bearer $token" | tee /dev/stderr
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/profile)
+          test "$code" = "401" || { echo "::error::anonymous /api/profile returned $code, expected 401"; exit 1; }
+
+          # Admin-only routes must refuse an ordinary user's valid token.
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/users \
+            -H "Authorization: Bearer $token")
+          test "$code" = "403" || { echo "::error::non-admin /api/users returned $code, expected 403"; exit 1; }
+
+          # And the authenticated happy path works.
+          curl -fsS http://127.0.0.1:8080/api/tasks -H "Authorization: Bearer $token" | tee /dev/stderr
+          curl -fsS http://127.0.0.1:8080/api/profile -H "Authorization: Bearer $token" | tee /dev/stderr
           echo "API round trip OK"
 
       - name: HOST=0.0.0.0 is still honoured for container hosting
