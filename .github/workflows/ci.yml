@@ -1,0 +1,253 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: go backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # Reads the version from go.mod so this does not drift from the module.
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: go mod tidy leaves no diff
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum \
+            || { echo "::error::go.mod/go.sum are not tidy; run 'go mod tidy'"; exit 1; }
+
+      - name: Build
+        run: go build ./...
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: gofmt leaves no diff
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::these files are not gofmt'd:"
+            echo "$unformatted"
+            gofmt -d .
+            exit 1
+          fi
+
+      - name: Test with race detector and coverage
+        run: go test -race -coverprofile=coverage.out ./...
+
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -20
+
+  staticcheck:
+    name: staticcheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
+      - name: Run staticcheck
+        run: staticcheck ./...
+
+  bind-address:
+    # config.LoadConfig defaults HOST to 127.0.0.1. This job reads the real
+    # listening socket, because a bind is the kind of thing that regresses
+    # quietly — and this service is Go, so there is no runtime surprise to
+    # blame if it does.
+    name: binds loopback by default
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: tasks_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      DB_URI: postgres://postgres:postgres@127.0.0.1:5432/tasks_test?sslmode=disable
+      JWT_SECRET: ci-only-secret-at-least-32-characters-long
+      CORS_ORIGINS: http://localhost:3000
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - run: go build -o /tmp/server ./cmd/server
+
+      - name: Default bind is 127.0.0.1, and the API round-trips
+        env:
+          PORT: '8080'
+        run: |
+          set -euo pipefail
+          /tmp/server > server.log 2>&1 & SERVER_PID=$!
+          trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
+
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8080/health > /dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8080/health | grep -q '"status":"ok"'
+
+          echo "--- listening sockets on 8080 ---"
+          ss -ltn 2>/dev/null | grep ':8080' || true
+
+          if ss -ltn 2>/dev/null | grep -qE '(0\.0\.0\.0|\*):8080'; then
+            echo "::error::server is listening on all interfaces by default"
+            cat server.log
+            exit 1
+          fi
+          ss -ltn 2>/dev/null | grep -q '127.0.0.1:8080' \
+            || { echo "::error::no loopback listener found"; ss -ltn; cat server.log; exit 1; }
+          echo "loopback-only bind confirmed"
+
+          # Register, log in, create a task — a real round trip through GORM
+          # and Postgres rather than the in-memory SQLite the unit tests use.
+          user="ci$(date +%s)"
+          curl -fsS -X POST http://127.0.0.1:8080/register \
+            -H 'Content-Type: application/json' \
+            -d "{\"username\":\"$user\",\"password\":\"correct-horse-battery\"}" > reg.json
+          cat reg.json
+
+          token=$(curl -fsS -X POST http://127.0.0.1:8080/login \
+            -H 'Content-Type: application/json' \
+            -d "{\"username\":\"$user\",\"password\":\"correct-horse-battery\"}" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))')
+          test -n "$token" || { echo "::error::login returned no token"; cat server.log; exit 1; }
+
+          # The password hash must never come back in a response.
+          if grep -qi '"password"' reg.json; then
+            echo "::error::password field returned by /register"
+            exit 1
+          fi
+
+          # An anonymous task list must be refused.
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/tasks)
+          test "$code" = "401" || { echo "::error::anonymous /tasks returned $code"; exit 1; }
+
+          curl -fsS http://127.0.0.1:8080/tasks -H "Authorization: Bearer $token" | tee /dev/stderr
+          echo "API round trip OK"
+
+      - name: HOST=0.0.0.0 is still honoured for container hosting
+        env:
+          PORT: '8081'
+          HOST: 0.0.0.0
+        run: |
+          set -euo pipefail
+          /tmp/server > server2.log 2>&1 & SERVER_PID=$!
+          trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8081/health > /dev/null 2>&1 && break
+            sleep 1
+          done
+          ss -ltn 2>/dev/null | grep -qE '(0\.0\.0\.0|\*):8081' \
+            || { echo "::error::HOST override was ignored"; ss -ltn; exit 1; }
+          echo "HOST override works"
+
+      - name: Refuses to start with a short JWT_SECRET
+        env:
+          PORT: '8082'
+          JWT_SECRET: too-short
+        run: |
+          set +e
+          output=$(/tmp/server 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          test "$status" -ne 0 || { echo "::error::started with a short JWT_SECRET"; exit 1; }
+          echo "$output" | grep -q "32" || { echo "::error::expected the 32-character minimum message"; exit 1; }
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8080
+
+  docker:
+    name: backend image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: false
+          load: true
+          tags: task-management-backend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Image refuses to start without configuration
+        run: |
+          set +e
+          output=$(docker run --rm task-management-backend:ci 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          test "$status" -ne 0 || { echo "::error::started with no configuration"; exit 1; }
+          echo "$output" | grep -qE "DB_URI|JWT_SECRET" \
+            || { echo "::error::expected a missing-configuration error"; exit 1; }

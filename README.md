@@ -10,6 +10,10 @@ A full-stack task manager with a Go (Gin) API, a Next.js frontend, JWT authentic
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
 ![Gemini](https://img.shields.io/badge/Google-Gemini-8E75B2?logo=googlegemini&logoColor=white)
 
+[![CI](https://github.com/VamsiKrishnaThota03/task-management/actions/workflows/ci.yml/badge.svg)](https://github.com/VamsiKrishnaThota03/task-management/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/VamsiKrishnaThota03/task-management/actions/workflows/codeql.yml/badge.svg)](https://github.com/VamsiKrishnaThota03/task-management/actions/workflows/codeql.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 ![Task list](docs/screenshots/tasks.png)
 
 ## Overview
@@ -171,3 +175,68 @@ Send protected requests with `Authorization: Bearer <token>`. Task JSON uses cam
 ## Contact
 
 Thota Vamsi Krishna — [GitHub](https://github.com/VamsiKrishnaThota03)
+
+
+## Quality gates
+
+The Go backend was already in good shape — `config.LoadConfig` has no fallback
+for `DB_URI` or `JWT_SECRET`, rejects a signing secret under 32 characters,
+defaults `HOST` to `127.0.0.1`, and the HTTP server sets read/header/idle
+timeouts. This adds the CI that keeps it that way, plus tests for the config
+loader itself.
+
+### Continuous integration
+
+| Job | What it proves |
+| --- | --- |
+| `backend` | `go build`, `go vet`, `gofmt -l` leaves no diff, `go mod tidy` leaves no diff, and `go test -race` with a coverage summary |
+| `staticcheck` | `staticcheck ./...` at a pinned version |
+| `bind-address` | Builds the real binary and reads `ss -ltn`: no `0.0.0.0:8080` listener by default, a loopback one present, `HOST=0.0.0.0` still honoured, and the binary refuses to start with a short `JWT_SECRET`. Then registers, logs in and lists tasks against **PostgreSQL 16** — the driver production uses, rather than the in-memory SQLite the unit tests run on — and asserts no password hash is returned and an anonymous `/tasks` gets 401 |
+| `frontend` | ESLint, `tsc --noEmit`, and a production Next.js build |
+| `docker` | The image builds and refuses to start with no configuration |
+
+CodeQL runs over **both** languages (`go` and `javascript-typescript`) weekly
+and on every push. Dependabot watches `gomod`, npm, Actions and the Dockerfile.
+
+### Tests
+
+```bash
+cd backend
+go test ./...                 # auth, routes, ai, config
+go test -race -cover ./...    # as CI runs it
+```
+
+`internal/config/config_test.go` is new and covers the parts of configuration
+that are security-relevant: that `DB_URI` and `JWT_SECRET` are both required and
+both named in the error, that a secret under 32 characters is a hard failure,
+that a secret at exactly 32 is accepted, that **an unset `HOST` resolves to
+`127.0.0.1`** rather than all interfaces, that an explicit `HOST`/`PORT` is
+honoured, that `CORS_ORIGINS` has blanks dropped and trailing slashes stripped,
+that a quoted `GEMINI_KEY` is unquoted, that a missing `GEMINI_KEY` is not fatal
+(AI suggestions are optional by design), and that a whitespace-only required
+value counts as missing rather than passing the length check.
+
+The frontend gained an ESLint flat config (`next/core-web-vitals` +
+`next/typescript`); there was no `lint` script before, so nothing was checking it.
+
+### Docker
+
+```bash
+printf 'POSTGRES_PASSWORD=%s\nJWT_SECRET=%s\n' \
+  "$(openssl rand -hex 16)" "$(openssl rand -hex 32)" > .env
+
+docker compose up --build
+```
+
+Postgres and the API both publish to `127.0.0.1` only, so neither is reachable
+from your network, and Compose fails fast with a named error if either variable
+is missing. The backend image is a two-stage build on `alpine` running as a
+non-root user with a statically linked binary (`CGO_ENABLED=0`, `-trimpath`).
+
+## Note on `dangerouslySetInnerHTML`
+
+`frontend/app/layout.tsx` injects a small inline script to apply the saved
+theme before first paint, avoiding a light/dark flash. It is a module-level
+constant with no interpolation of any kind — no user input reaches it — which is
+the standard way to solve that problem in Next.js. Flagging it as an XSS risk
+would be a false positive.
